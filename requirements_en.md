@@ -1,69 +1,167 @@
-# System Requirements Specification: Detection of AI-Generated or AI-Modified Visual Content
+# Evidence Review and Existing Solutions
 
-**Version:** 1.0 | **Status:** Planning; performance testing not yet conducted | **Milestone:** Submit by class 6  
-**Design basis:** Updated Evidence Review, November 2026. All thresholds below are proposed acceptance targets, not measured achievements.
+**Project:** Detection of Images and Videos Generated or Modified Using AI  
+**Research planning document:** November 2026 | **Scope:** Images and videos, including localized AI editing; text detection is excluded  
+**Document type:** Evidence Review and Alternatives | **Status:** Preliminary design decisions, before conducting project experiments
 
-## 1. Purpose, Stakeholders, and Scope
+## 1. Purpose, Scope, and Central Decision Question
 
-The system helps users assess whether images or videos show signs of AI generation or modification. It **does not** verify whether a depicted event occurred or whether accompanying claims are true. Primary users are social-media users; other stakeholders are the development team and supervisor, who require reproducible experiments.
+The project's goal is to build a system that helps users assess whether an image or video shows indications of being generated or modified using artificial intelligence.
 
-**Core user journey:** Open the website, select an image, validate the file, run detectors, and view a cautious assessment, score, and suspected manipulation type. The user can then submit another image.
+**The detection scope includes three distinct scenarios:**
 
-**Phased scope:** The initial minimum viable product (MVP) is a website detecting images **fully generated** by AI. Phase 2 adds video detection and a separate image-manipulation **localization** pipeline, including AI-based inpainting. Checking signed provenance credentials (C2PA) is optional. A browser extension and an Android floating button are deferred. **Out of scope:** Text detection, legal determinations of authenticity, and fact-checking. Detection of every generator or local edit is not guaranteed.
+- Images or video frames generated entirely by AI (*AI-Generated*).
+- Authentic photographs that have undergone **localized AI editing**, such as adding, removing, or replacing an object through *Inpainting* (*AI-Modified*).
+- Facial or video manipulation of the *Deepfake* type.
 
-## 2. Prioritized Functional Requirements
+**Central decision question:** How can we design a reliable and accessible system for detecting images and videos generated or edited using AI, while selecting and combining appropriate detection methods and addressing limitations in accuracy and uncertainty?
 
-Priorities are **Must** for the initial MVP, **Should / Phase 2** for planned additions, **Could** for optional features, and **Later** for future extensions. Tests use documented detector versions and decision rules.
+## 2. Search Approach and Source Selection
 
-| ID | Requirement | Testable acceptance criterion | Priority |
-|---|---|---|---|
-| `FR-01` | Image upload | A user can select a local file, submit it, and receive a request ID; a valid file proceeds to analysis. | Must |
-| `FR-02` | Input validation | Only `JPG`/`PNG` files of 1–10,000,000 bytes are accepted. Empty, oversized, extension/magic-byte-mismatched, or undecodable files are rejected **before inference**, with an explicit reason. | Must |
-| `FR-03` | Detection inference | A valid image reaches the global detector and returns a normalized score plus quality/agreement information required for the decision, or a defined error code. | Must |
-| `FR-04` | Cautious result display | Every completed analysis shows exactly one of the three labels below, a visual-suspicion score of `0.00–1.00` to two decimal places, suspected type (`Fully generated` / `Locally modified` / `Undetermined`), processing time in seconds, and a fixed warning. `Locally modified` is available only when localization is enabled. | Must |
-| `FR-05` | Failure handling | Detector failure or a 30-second timeout produces a visible error state, with no classification label, invented score, or success message. | Must |
-| `FR-06` | Repeat analysis | A new image can be submitted after a result or error; the previous result is not presented as the new request's result. | Should |
-| `FR-07` | Video analysis | Only valid `MP4` files up to 30 seconds and 50,000,000 bytes are accepted. Sample up to 16 frames at uniform temporal intervals; report undecodable frames and reject if none is valid. Display a video-level decision. | Phase 2 |
-| `FR-08` | Local manipulation localization | A valid image enters a separate pipeline that returns a pixel-level suspicion heatmap or tamper mask at the original image dimensions, plus a regional reliability map/score. If no reliable output exists, do not claim a modified region was found. | Should / Phase 2 |
-| `FR-09` | Signed provenance verification | When enabled, check `C2PA 2.4` Content Credentials and report `Valid`, `Invalid`, or `Missing` separately. Missing credentials are not evidence of AI generation and do not automatically alter the visual score. | Could |
-| `FR-10` | Browser extension | A user can send an image from a webpage to the detection engine through an extension. | Later |
-| `FR-11` | Android floating button | A user can initiate a check from another app only after the appropriate permissions and consent. | Later |
+For this review of the literature and existing solutions, we focused on finding academic studies, datasets, technological tools, and commercial products that address the detection of images and videos generated or edited using artificial intelligence. The search aimed to examine existing detection methods, understand their strengths and limitations, and identify approaches suitable for our project.
 
-**`FR-04` decision rule:** The three labels are **“Signs of AI generation/manipulation detected,” “Insufficient signs detected,” and “Inconclusive.”** The last applies when media quality is poor, confidence is insufficient, or detectors disagree, according to thresholds calibrated on validation data and stored in a versioned configuration. The initial global-only MVP must not report localized modification detection. The score is a **normalized suspicion measure**, not a proven probability. Fixed warning: **“This result is a statistical assessment, not proof of the content's origin or authenticity.”**
+Search terms included `AI-generated image detection`, `Deepfake detection`, `Image manipulation localization`, `Inpainting detection`, `Video frame sampling`, and `AI detection model fusion`. We selected sources based on their relevance to the project objectives, credibility, technical methods, and the accessibility of the models and tools they describe. We also reviewed competing products to understand which capabilities already exist and what our system could improve or add.
 
-## 3. Acceptance Scenarios and Failure Cases
+For each source, we examined the main findings, methodological limitations, and potential contribution to our design and implementation decisions. We favored primary and up-to-date sources, including academic conference papers, official technical documentation, and product websites. Source details and links were reviewed in November 2026.
 
-**Test A — Successful analysis (`FR-01`, `FR-03`, `FR-04`):** **Given** a valid `PNG` and a controlled detector response containing score `0.87`, a positive decision, and processing time `2.40` seconds; **when** the user uploads the image; **then** the exact positive label, `0.87`, type `Fully generated`, `2.40` seconds, and fixed warning appear. The request ID matches the response.
+## 3. Findings by Theme
 
-**Test B — Invalid input (`FR-02`):** **Given**, separately, a `PDF`, an empty file, a 10,000,001-byte file, a `PDF` renamed with a `.jpg` extension, and a corrupted `PNG`; **when** each is submitted; **then** it is rejected with the appropriate reason, no inference request is made, and the user can retry.
+### 3.1 Generalization to Unseen Generators and Media Quality
 
-**Test C — Abstention (`FR-04`):** **Given** a heavily compressed image or a controlled detector response classified by the configuration as insufficient or contradictory; **when** analysis completes; **then** the label **“Inconclusive”**, calculated score (if available), type `Undetermined`, processing time, and warning appear. No claim that the image is authentic is displayed.
+One of the main challenges in detecting AI-generated content is the ability to identify images produced by generative models that were not included in the detector's training data.
 
-**Test D — Service failure/timeout (`FR-05`):** **Given** an unavailable detector or one that fails to respond within 30 seconds; **when** a valid image is submitted; **then** a controlled error appears without a classification, score, or success message. Retrying remains possible. Controlled responses ensure deterministic tests.
+Ojha, Li, and Lee [1] examined how well detectors generalize to previously unseen generative models. They extracted visual features using the pretrained `CLIP ViT-L/14` model and compared classification methods, including `Nearest Neighbor` and `Linear Probing`. Their findings emphasize the importance of selecting detectors that can recognize content from new sources, rather than relying only on high performance on the training data.
 
-## 4. Quality Requirements, Test Environment, and Constraints
+The GenImage study [2] also examined how image quality affects detection performance, including changes such as compression, blurring, and reduced resolution. These transformations are particularly relevant to images shared on social networks, where content is often processed further before reaching users.
 
-**Shared evaluation protocol:** Use a locked test set of at least 1,000 unique `GenImage` images: at least 500 authentic photographs and 500 synthetic images, including at least one generator absent from training and calibration. In each class, evaluate at least 100 JPEG-compressed images and at least 100 resized images; subsets may overlap. Split by source, remove duplicates, and use one fixed model/version and local machine. Record CPU, GPU (if any), RAM, operating system, libraries, image sizes, and detector configuration. Processing is sequential, with no more than one active user.
+**Implication for our project:** We will evaluate detectors both on images generated by models excluded from the training data and on images subjected to quality degradation. This will help us assess reliability under conditions resembling real use, rather than relying exclusively on accuracy figures reported in previous studies.
 
-| ID | Quality requirement | Pass condition and evidence |
-|---|---|---|
-| `QR-01` | Classification performance | `Macro-F1 >= 0.80` over the complete set of 1,000+ images. For this threshold, `Inconclusive` counts as incorrect against the ground-truth class. Also report abstention rate and results by generator and compression. **Evidence:** confusion matrix and metric report. |
-| `QR-02` | False-positive rate | `FPR <= 15%` among at least 500 real photographs in the same set, including JPEG-compressed samples. Report abstentions separately. **Evidence:** false-positive count and exact denominator. |
-| `QR-03` | Response time | At least 95% of 100 sequential single-image requests (up to `1920×1080` resolution; one concurrent user) finish within 15 seconds, measured from request receipt to result display on documented local hardware. **Evidence:** per-request times and 95th percentile. |
-| `QR-04` | Stability | Zero system crashes and zero false success messages across 20 malformed/exceptional inputs and two simulated service-failure/timeout scenarios. **Evidence:** execution logs, error codes, and UI state. |
+### 3.2 Facial Manipulation and Fair Video Evaluation
 
-Use of models and datasets is subject to licensing and available compute. For localization, additionally measure pixel-level F1 and intersection over union (`IoU`) against ground-truth masks, separately from image-level classification. Targets require independent validation.
+A central challenge in detecting manipulated videos is identifying AI-based changes such as face swaps or altered facial expressions and movements. Video quality and compression can also affect detection performance.
 
-## 5. Rationale for Design Choices and Empirical Questions
+FaceForensics++ [3] presents a dataset with 1,000 source videos and four facial manipulation methods: `DeepFakes`, `Face2Face`, `FaceSwap`, and `NeuralTextures`. It enables evaluation at three compression levels: no lossy compression (`raw/c0`), lighter compression (`c23`), and stronger compression (`c40`). This allows researchers to examine how manipulation type and video quality affect detection results.
 
-1. **Locally run open models:** Support reproducibility, data-processing control, and independence from ongoing commercial API access. External services, if used, serve only as comparison points.
-2. **Global detection using pretrained representations:** Evaluate `CLIP ViT-L/14` and other baselines because of evidence on generalization to unseen generators [1]. Comparing a single model, simple averaging, and quality-aware fusion is a research objective, not a proven result.
-3. **Independent localization pipeline:** `TruFor`, using `Noiseprint++`, is a candidate for masks and reliability estimates [12]. Inpainting tests, including generalization challenges documented by `TGIF2` [13], prevent presenting global classification as proof of local manipulation.
-4. **Three-way decision and separate provenance:** Generalization limitations motivate abstention. `C2PA 2.4` [10] supplies complementary provenance evidence, not a substitute for visual detection or proof of factual truth.
-5. **Web first:** Manual upload reduces integration complexity. The browser extension and Android button are deferred because of scope and screen-capture permissions [14]. Video starts with uniform frame sampling, then compares alternatives at the same frame budget.
+DeepfakeBench [4] proposes a unified framework for comparing 15 detection methods across 9 datasets, using consistent preprocessing and evaluation metrics. In addition, Deepfake-Eval-2024 [5], based on media circulated online during 2024, highlights gaps between detector performance in controlled research environments and performance on real-world internet content.
 
-**To be determined experimentally:** Suspicion and abstention thresholds, fusion-score calibration, a suitable localization detector, optimal video frame count, and runtime feasibility on available hardware. Calibration must not access the locked test set.
+**Implication for our project:** We will test the system on videos containing different manipulation types and compression levels. We will also compare detection methods under consistent conditions to ensure a fair evaluation. Initially, we will apply image detectors to sampled video frames; later, we will examine whether dedicated video models are needed to detect manipulations that become apparent through changes over time.
 
-## 6. Exit Check: Unambiguous Evidence for a Core Requirement
+### 3.3 Detecting Localized Image Edits (AI-Modified / Inpainting)
 
-**Requirement:** `FR-02` — Input validation. **Acceptance criterion:** Only decodable `JPG`/`PNG` files of 1–10,000,000 bytes with matching extensions and file signatures reach inference. Every other input is rejected with an explanatory message and no engine call. **Test evidence:** A table covering all five rejection cases in Test B, one valid control file, screenshots of the UI outcomes, and request logs showing **zero detector calls** for rejected inputs. An external reviewer can therefore decide pass or fail without further interpretation.
+In addition to images created entirely using AI, it is important to detect authentic images that have been partially edited using artificial intelligence. Such edits, known as `Inpainting`, can add, remove, or modify objects and selected regions while preserving the remainder of the original image. In these cases, classifying the entire image as real or fake may be insufficient; the edited region must also be identified.
+
+TruFor [12] presents a method for detecting image manipulations and localizing suspicious regions. It combines visual information with noise-related features through `Noiseprint++`, producing a map of potentially manipulated regions together with an indication of detection reliability. However, the method does not guarantee successful detection of every type of edit produced by newer AI models.
+
+TGIF2 [13] focuses on localized editing using generative models such as `Stable Diffusion` and `FLUX.1`. The study examines different editing methods and shows that the ability to detect and localize changes depends on both the editing method and the model used. In particular, detection becomes more challenging when an image region is regenerated rather than simply replaced.
+
+**Implication for our project:** Alongside models for detecting fully AI-generated images, we will integrate an additional model for detecting and localizing partial edits. The system will present a detection score as a percentage and, where local manipulation is suspected, will also highlight the suspicious regions in the image. Scores will be accompanied by explanations of their limitations, and their reliability will be evaluated across different edit types using appropriate experiments and metrics.
+
+### 3.4 Existing Solutions and Implications for Project Novelty
+
+Several existing solutions let users check whether images and videos were created or edited using artificial intelligence. These solutions differ in their user workflows, supported media types, and detection methods.
+
+For example, AI or Not [7] and F-Secure [8] offer tools for checking images and videos through file uploads. DeepFake-O-Meter [9] is a research-oriented platform that allows users to run multiple deepfake detection models and compare their results.
+
+The review indicates that offering an image/video upload tool, or even using multiple detectors, is not novel by itself. Accordingly, our project will focus on developing and evaluating a method for combining outputs from different models, with the aim of improving detection reliability and addressing cases where the models produce conflicting or ambiguous results.
+
+**Implication for our project:** We will build a system that combines models for detecting fully AI-generated images, models for finding localized edits, and techniques for analyzing videos. We will evaluate whether our fusion algorithm improves detection compared with a single detector or a simple combination of scores, while considering accuracy, uncertainty, and processing time.
+
+### 3.5 Provenance Evidence and Limits of Inference
+
+In addition to using AI models to analyze images and videos, other methods can examine information about where media originated and which changes were made to it over time.
+
+The C2PA standard, version 2.4 [10], enables digitally signed information about media origin and editing history to be attached to files using a mechanism known as `Content Credentials`. The Content Authenticity Initiative [11] also provides tools for checking and validating such information.
+
+However, this approach has limitations. Not every image or video contains these credentials, so their absence does not necessarily indicate that the content was AI-generated. Likewise, valid credentials and signatures do not prove that the depicted content is factually true.
+
+**Implication for our project:** We will consider adding a C2PA-based provenance check as an additional source of information for users. This check will be presented separately from the detection models' results and will not independently determine whether the image or video was AI-generated.
+
+## 4. Evidence Table and Project Implications
+
+| Source | Verifiable technical evidence | Limitation | Design implication |
+| --- | --- | --- | --- |
+| Ojha, Li, Lee [1] | `CLIP ViT-L/14`; comparison of `nearest neighbor` and `linear probing`; examination of additional CLIP and ImageNet representations | Only particular generator families and datasets were examined, not every type of local edit | Use a global detector based on pretrained representations and evaluate it on unseen generators |
+| GenImage [2] | `cross-generator` and `degraded image` tasks (blur, compression, and low resolution) | Large dataset; risk of example or source leakage | Use a controlled subset, source-separated splits, and JPEG/resize robustness tests |
+| FaceForensics++ [3] | 1,000 source videos; DeepFakes, Face2Face, FaceSwap, NeuralTextures; `raw/c0`, `c23`, `c40` levels and masks | Focused on facial manipulation methods and the period when the dataset was created | Test video detection by compression level and distinguish facial deepfakes from fully synthetic content |
+| DeepfakeBench [4] | 15 methods, 9 datasets, consistent data handling, preprocessing, and metrics | Fairness depends on adhering to evaluation protocols and splitting policies | Use the same data, preprocessing, and frame budget in each comparison |
+| Deepfake-Eval-2024 [5] | In-the-wild content collected during 2024; conference publication in 2026 | Dataset distribution and labels limit generalization | Conduct external evaluation and show percentage detection scores with explanations of uncertainty and calibration |
+| TruFor [12] | Fusion of RGB with `Noiseprint++`; pixel-level localization map, confidence map, and image-level score | Generalization to every new inpainting method is not guaranteed | Add a localization branch and heatmap alongside global classification |
+| TGIF2 [13] | `SD2`, `SDXL`, `FLUX.1` edits; `Spliced/FR` comparison, `Semantic/Random` masks; `pixel F1` and `IoU` reporting | Large variation across edit types; particular difficulty with fully regenerated content | Use test data with ground-truth masks and evaluate detection separately from localization |
+| BitMind / F-Secure [6, 8] | Browser-based checks and image/video file uploads are already available | Product pages are not independent accuracy evaluations | Do not claim uploads or browser integration as novelty; measure improvements in the underlying method |
+| DeepFake-O-Meter [9] | Platform aggregating multiple AI detectors for images, video, and audio | A research website does not demonstrate unrestricted public API availability | Include simple fusion as a baseline and define the algorithmic difference in our approach |
+| C2PA + CAI [10, 11] | Signed manifests and SDK-based verification mechanisms | Credentials are not always available, and verification cannot establish factual truth | Consider a separate provenance module that does not automatically change the AI score |
+| Android Media Projection [14] | User consent is required for screen-capture sessions; Android 14+ has foreground-service requirements | Additional integration complexity, platform limitations, and permissions | Prioritize a web MVP; retain a floating button as a conditional future extension |
+
+## 5. Synthesis: Conclusions and Preliminary Decisions
+
+The reviewed studies indicate that maintaining reliable detection under varying conditions is one of the main challenges in identifying content generated or edited using AI, particularly when dealing with unseen generators or media affected by compression and other quality changes. Furthermore, TruFor and TGIF2 [12, 13] underscore the need to distinguish fully AI-generated images from partially edited images, since these tasks require different approaches.
+
+The review of existing solutions shows that systems for checking images and videos with different detectors already exist. Therefore, our project's main contribution will be to develop and evaluate an algorithm that combines outputs from multiple models in an effort to improve reliability and address the limitations of individual detectors.
+
+**Key decisions following the review:**
+
+- **MVP implementation:** We will develop a website that allows users to upload an image or video and receive percentage-based detection scores instead of an unequivocal real/fake classification. Scores will be accompanied by explanations of their limitations. We will distinguish a raw detection score from a trustworthy probability, based on our calibration results.
+- **Model combination:** We will use existing models for fully AI-generated image detection as well as models for detecting and localizing partial edits. We will develop our own fusion algorithm and compare it with simple approaches such as score averaging.
+- **Video detection:** Initially, we will analyze frames sampled from videos with image detectors and aggregate their outputs for a video-level assessment. We will later investigate whether a dedicated video model is needed.
+- **Results presentation:** The system will display percentage-based detection scores and, when local manipulation is suspected, potentially highlight suspicious regions in the image, if the selected model supports this.
+- **Future extensions:** A system-wide floating button for Android will remain outside the initial MVP and will be considered after the core system is complete.
+
+### 5.1 System Alternatives and the Selected Approach
+
+We considered commercial API services versus independently running existing models. For the first stage, we chose to rely on open models that can be run locally or in a controlled environment, allowing us to control detection, reproduce experiments, and avoid dependence on paid services.
+
+The system will contain several detection components: models for fully AI-generated images, a model for finding localized edits, and a video-analysis component based on frame sampling. Their outputs will be passed to our fusion algorithm, which will produce scores for users. Outputs of different types, such as a whole-image score and a localization map, will not be directly combined without suitable evaluation.
+
+We will also consider adding a C2PA-based provenance check to provide further information about an image or video separately from the detection models' results.
+
+### 5.2 Decisions Changed by the Evidence (Exit Check)
+
+The review of research and existing solutions led to several changes in our initial project plan.
+
+First, findings by Ojha and Deepfake-Eval-2024 [1, 5] highlighted limitations of detection and the challenges posed by content from new sources. As a result, we decided that the MVP will present percentage detection scores rather than a binary real/fake decision. This allows users to see the system's assessment without treating it as definitive proof. However, simply displaying percentages does not make the scores reliable; we will therefore evaluate their calibration and validity.
+
+**Decisions that may change later:** If a particular model performs poorly on localized edits, we will explore alternatives. If our fusion algorithm does not improve on an individual detector, we will investigate another combination method. Likewise, if frame-based video analysis proves insufficient, we will consider integrating a dedicated video detector.
+
+## 6. Evaluation Plan, Limitations, and Open Questions
+
+To evaluate system performance and the contribution of our fusion algorithm, we will conduct experiments on datasets containing authentic images and videos, fully AI-generated content, and partially edited content. We will assess performance under different conditions and compare the proposed system with each individual detector and simple fusion methods.
+
+**Detection performance:** We will use standard metrics such as `Precision`, `Recall`, `F1`, and `ROC-AUC`, alongside false-positive rates and processing time. Since the system will display percentage detection scores, we will also evaluate calibration to determine how closely those scores correspond to trustworthy probabilities that content was generated or edited using AI.
+
+**Localized edit detection:** We will evaluate the system's ability to locate image regions modified using AI. Metrics such as `IoU` and `Pixel-level F1` will compare the predicted suspicious regions with ground-truth edited regions. Performance will also be assessed across different edit types, drawing on TruFor and TGIF2 [12, 13].
+
+**Video detection:** Initially, we will evaluate detection by sampling frames from videos and combining their outputs. We will compare sampling methods and examine how the number of analyzed frames affects accuracy and processing time, using consistent comparison conditions.
+
+**Robustness and generalization:** We will test content generated by models excluded from the training or calibration data, as well as images and videos subjected to compression, blur, or resolution changes. We will keep training, validation, and test data separate to obtain a credible estimate of performance on new content.
+
+**Limitations and open questions:** The main remaining challenges are generalization to new AI generators, the accuracy of localized edit detection, computational requirements, and the availability of models and datasets. We will also need to determine whether model fusion actually improves results and whether verified provenance information through C2PA can improve the assessment.
+
+## 7. References
+
+1. Ojha et al. (2023). *Towards Universal Fake Image Detectors That Generalize Across Generative Models*. CVPR. [Full paper (PDF)](https://openaccess.thecvf.com/content/CVPR2023/papers/Ojha_Towards_Universal_Fake_Image_Detectors_That_Generalize_Across_Generative_Models_CVPR_2023_paper.pdf)
+
+2. Zhu et al. (2023). *GenImage: A Million-Scale Benchmark for Detecting AI-Generated Image*. NeurIPS. [Full paper (PDF)](https://proceedings.neurips.cc/paper_files/paper/2023/file/f4d4a021f9051a6c18183b059117e8b5-Paper-Datasets_and_Benchmarks.pdf)
+
+3. Rössler et al. (2019). *FaceForensics++: Learning to Detect Manipulated Facial Images*. ICCV. [Full paper (PDF)](https://openaccess.thecvf.com/content_ICCV_2019/papers/Rossler_FaceForensics_Learning_to_Detect_Manipulated_Facial_Images_ICCV_2019_paper.pdf)
+
+4. Yan et al. (2023). *DeepfakeBench: A Comprehensive Benchmark of Deepfake Detection*. NeurIPS. [Full paper (PDF)](https://proceedings.neurips.cc/paper_files/paper/2023/file/0e735e4b4f07de483cbe250130992726-Paper-Datasets_and_Benchmarks.pdf)
+
+5. Chandra et al. (2026). *Deepfake-Eval-2024: A Multi-Modal In-the-Wild Benchmark of Deepfakes Circulated in 2024*. CVPR Workshops. [Full paper (PDF)](https://openaccess.thecvf.com/content/CVPR2026W/APAI/papers/Chandra_Deepfake-Eval-2024_A_Multi-Modal_In-the-Wild_Benchmark_of_Deepfakes_Circulated_in_2024_CVPRW_2026_paper.pdf)
+
+6. BitMind (n.d.). *AI Detector – Chrome Extension*. Product documentation. [Source link](https://bitmind.ai/extension)
+
+7. AI or Not (n.d.). *AI Image Detector – Check If an Image Is AI-Generated*. Product page. [Source link](https://www.aiornot.com/ai-image-detector)
+
+8. F-Secure (n.d.). *F-Secure Deepfake Detector*. Product page. [Source link](https://www.f-secure.com/en/deepfake-detector)
+
+9. University at Buffalo (n.d.). *DeepFake-O-Meter – Detection Models*. Research platform. [Source link](https://zinc.cse.buffalo.edu/ubmdfl/deep-o-meter/models)
+
+10. C2PA (2026). *Content Credentials: C2PA Technical Specification*, version 2.4. Technical specification. [Source link](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html)
+
+11. Content Authenticity Initiative (n.d.). *CAI Open Source SDK*. Official documentation. [Source link](https://opensource.contentauthenticity.org/docs/introduction/)
+
+12. Guillaro et al. (2023). *TruFor: Leveraging All-Round Clues for Trustworthy Image Forgery Detection and Localization*. CVPR. [Full paper (PDF)](https://openaccess.thecvf.com/content/CVPR2023/papers/Guillaro_TruFor_Leveraging_All-Round_Clues_for_Trustworthy_Image_Forgery_Detection_and_CVPR_2023_paper.pdf)
+
+13. Mareen et al. (2026). *TGIF2: Extended Text-Guided Inpainting Forgery Dataset and Benchmark*. Journal of Information Security. [Full paper (PDF)](https://link.springer.com/content/pdf/10.1186/s13635-026-00235-9.pdf)
+
+14. Google, Android Developers (2026). *Media Projection*. Official documentation. [Source link](https://developer.android.com/media/grow/media-projection)
